@@ -50,6 +50,7 @@ c_search = c_white
 capture_mode = "capture" # capture, tracking, search
 captured_balls = []
 search_box = (0,0,1,1)
+top_speed = 0
 
 for file_number, file in enumerate(frame_files):
     img = cv.imread(str(file),-1) # BGR by default
@@ -67,7 +68,7 @@ for file_number, file in enumerate(frame_files):
     cv.imshow("First Image, Masked, opened", img_opened)
 
     contours, hierarchy = cv.findContours(img_opened, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-    best_matching_ball = (0, 0, 1, 1, -math.inf, np.zeros([1,1])) #(x, y, w, h, similarity, img) 
+    best_matching_ball = (*search_box, -math.inf, np.zeros([1,1])) #(x, y, w, h, similarity, img) 
     best_similarity = - math.inf
 
     candidate_ball_found = False
@@ -102,8 +103,30 @@ for file_number, file in enumerate(frame_files):
         
     (x, y, w, h, similarity, best_image) = best_matching_ball
 
-    top_speed = 0
-    search_box_expansion = 1
+    if len(captured_balls) > 1:
+        current_ball = captured_balls[-1]
+        last_ball = captured_balls[-2]
+        current_x = current_ball[0] + current_ball[2]/2
+        current_y = current_ball[1] + current_ball[3]/2
+        last_x = last_ball[0] + last_ball[2]/2
+        last_y = last_ball[1] + last_ball[3]/2
+        # pixels per frame --- for now!
+        current_speed = math.sqrt((current_x-last_x)**2 + (current_y-last_y)**2)
+        if current_speed > top_speed:
+            top_speed = current_speed
+            print("top_speed",top_speed)
+
+    # if top speed is pretty slow still, just double+5 the size of the search box
+    search_box_expansion = int(top_speed + 5)
+    if search_box_expansion < best_matching_ball[2]:
+        # w bigger than top speed
+        search_box_expansion = best_matching_ball[2]
+
+    if search_box_expansion < best_matching_ball[3]:
+        # h bigger than top speed
+        search_box_expansion = best_matching_ball[3]
+
+    print("search_box_expansion",search_box_expansion,"top_speed",top_speed)
 
     if capture_mode == "search" and candidate_ball_found:
         capture_mode = "capture"
@@ -112,7 +135,7 @@ for file_number, file in enumerate(frame_files):
         capture_mode = "search"
         # create search box from last known ball location
         x, y, w, h = search_box
-        search_box = (x - int(w/2), y - int(h/2), w * 2, h * 2) #double size of last known ball position
+        search_box = (x - int(search_box_expansion/2), y - int(search_box_expansion/2), w + search_box_expansion, h + search_box_expansion)
         similarity = 0
 
     if capture_mode == "capture":
@@ -132,7 +155,7 @@ for file_number, file in enumerate(frame_files):
             capture_mode == "capture"
         cv.putText(img, "SEARCH", (x - 2, y - 2), cv.FONT_HERSHEY_PLAIN, 0.8, capture_color, 1, cv.LINE_AA)
     else:
-        search_box = (x - int(w/2), y - int(h/2), w * 2, h * 2) #double size of last known ball position
+        search_box = (x - int(search_box_expansion/2), y - int(search_box_expansion/2), w + search_box_expansion, h + search_box_expansion)
         captured_balls.append(best_matching_ball)
         cv.putText(img, "Ball", (x - 2, y - 12), cv.FONT_HERSHEY_PLAIN, 1, capture_color, 1, cv.LINE_AA)
         cv.putText(img, "Norm_L2: " + str(round(similarity,2)), (x - 2, y - 2), cv.FONT_HERSHEY_PLAIN, 0.8, capture_color, 1, cv.LINE_AA)
